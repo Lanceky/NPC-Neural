@@ -3,6 +3,11 @@
 Built for **Agentic Cinema: The Blockbuster Hackathon** (Google Cloud), submitted
 to the **ClickHouse** partner track.
 
+**Live demo:** https://vienna-those-merchant-thoughts.trycloudflare.com
+(a no-signup `cloudflared` quick tunnel — see [Exposing a public
+URL](#exposing-a-public-url); if it's ever offline, run it yourself in a
+couple of commands from the same section).
+
 A live simulation of a movie scene where every character — from the two leads
 down to the bartender and valet — is an independent Gemini agent deciding its
 own next beat in real time. Principal characters get rich, frequent reasoning;
