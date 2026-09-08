@@ -79,6 +79,19 @@ async function poll() {
   }
 }
 
+// Minimal, safe markdown: escapes HTML first, then only turns **bold** and
+// newlines into tags -- the model's answers use just enough markdown for
+// this to matter, and nothing more.
+function renderMarkdownLite(text) {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\n/g, "<br>");
+}
+
 askForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   const question = askInput.value.trim();
@@ -91,7 +104,7 @@ askForm.addEventListener("submit", async (e) => {
       body: JSON.stringify({ question }),
     });
     const data = await res.json();
-    askAnswer.textContent = data.answer;
+    askAnswer.innerHTML = renderMarkdownLite(data.answer);
   } catch (err) {
     askAnswer.textContent = "Error asking the director's assistant.";
   }
