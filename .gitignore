@@ -1,0 +1,27 @@
+# Secrets — never commit
+.env
+.env.*.local
+secrets/
+*.json.key
+gcp-key.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# OS / editor
+.DS_Store
+*.log
+
+# Planning docs — local only, not part of the submission
+context.md
+optimizedcontext.md
+implementation.md
