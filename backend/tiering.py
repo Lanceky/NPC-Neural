@@ -8,7 +8,10 @@ counts against the hackathon's AI-usage restriction.
 from dataclasses import dataclass
 
 PRINCIPAL_INTERVAL_SECONDS = 12.0
-BACKGROUND_INTERVAL_SECONDS = 30.0
+# 12 background NPCs share one free-tier lite-model quota (15 requests/min).
+# 60s keeps sustained demand at ~12 rpm, leaving headroom for on-demand
+# /api/inspect calls instead of saturating the quota outright.
+BACKGROUND_INTERVAL_SECONDS = 60.0
 
 
 @dataclass

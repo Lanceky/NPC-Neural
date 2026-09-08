@@ -14,7 +14,12 @@ from dataclasses import dataclass
 from backend.agents import run_tick
 from backend.ingest import IngestQueue, upsert_npcs
 from backend.mcp_client import PersistentClickHouseMCP
-from backend.tiering import NPCState, plan_ticks
+from backend.tiering import (
+    BACKGROUND_INTERVAL_SECONDS,
+    PRINCIPAL_INTERVAL_SECONDS,
+    NPCState,
+    plan_ticks,
+)
 
 MAX_CONCURRENT_TICKS = 4
 LOOP_RESOLUTION_SECONDS = 1.0
@@ -106,6 +111,21 @@ def _apply_timeline(cast_by_id: dict[str, NPC], elapsed: float, fired: set[float
             npc.notable_payload = f"{event_type}: {payload}"
 
 
+def _stagger_start(cast: list[NPC], start: float):
+    """Spread each tier's first tick evenly across its interval instead of
+    firing every NPC in the same instant — a same-tier burst of background
+    ticks can blow the lite model's per-minute quota in one go."""
+    by_tier: dict[str, list[NPC]] = {}
+    for npc in cast:
+        by_tier.setdefault(npc.tier, []).append(npc)
+    intervals = {"principal": PRINCIPAL_INTERVAL_SECONDS, "background": BACKGROUND_INTERVAL_SECONDS}
+    for tier, members in by_tier.items():
+        interval = intervals[tier]
+        step = interval / len(members)
+        for i, npc in enumerate(members):
+            npc.last_tick_ts = start + i * step - interval
+
+
 async def _register_new_npcs(mcp: PersistentClickHouseMCP, cast: list[NPC]):
     existing = await mcp.run_query("SELECT npc_id FROM npcs")
     existing_ids = {row[0] for row in existing.get("rows") or []}
@@ -128,6 +148,7 @@ async def run_simulation(duration_seconds: float | None = None):
         await _register_new_npcs(mcp, cast)
         flush_task = asyncio.create_task(ingest.run_forever(mcp))
         start = time.time()
+        _stagger_start(cast, start)
 
         async def run_one(plan):
             npc = cast_by_id[plan.npc_id]

@@ -15,7 +15,7 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 from pydantic import BaseModel
 
-from backend import quota_state
+from backend import quota_state, rate_limiter
 
 RETRY_ATTEMPTS = 3
 RETRY_BACKOFF_SECONDS = 1.5
@@ -90,6 +90,8 @@ async def run_tick(npc_id: str, tier: str, context_snippet: str, goal: str) -> D
         # exhausted (for the rest of this process), degrade principal ticks
         # to the background model rather than stalling the whole simulation.
         effective_tier = "background" if (tier == "principal" and quota_state.principal_quota_exhausted) else tier
+        if effective_tier == "background":
+            await rate_limiter.lite_model_limiter.acquire()
         runner = _get_runner(effective_tier)
         session_id = f"{npc_id}-{uuid.uuid4().hex[:8]}"
         await runner.session_service.create_session(
