@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>NPC-Neural — Live Scene</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>NPC-Neural</h1>
+    <p>Manor Bar Confrontation — live agentic crowd, powered by Gemini + ClickHouse</p>
+  </header>
+
+  <main>
+    <div id="scene"></div>
+
+    <aside id="panel">
+      <h2>Director's Inspector</h2>
+      <div id="selected-info">Click an NPC to inspect their latest decision.</div>
+
+      <form id="ask-form">
+        <input id="ask-input" type="text" placeholder="Ask about the scene…" autocomplete="off">
+        <button type="submit">Ask</button>
+      </form>
+      <div id="ask-answer"></div>
+    </aside>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
