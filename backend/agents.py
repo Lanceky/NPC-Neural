@@ -30,20 +30,27 @@ class Decision(BaseModel):
     reasoning: str
     action: str
     mood: str
+    new_goal: str = ""
 
 
 PRINCIPAL_INSTRUCTION = (
     "You are a principal character in a movie scene, with a distinct "
     "personality and detailed context. Given your current context and goal, "
     "decide your next beat: your internal reasoning, the concrete action you "
-    "take, and your current mood. Be specific and true to character."
+    "take, and your current mood. Be specific and true to character. If your "
+    "context describes something you just noticed (e.g. another character's "
+    "action) that would plausibly change what you're trying to achieve right "
+    "now, set new_goal to that new goal in a few words; otherwise leave it "
+    "blank — most ticks should not change your goal."
 )
 
 BACKGROUND_INSTRUCTION = (
     "You are a background character (an extra) in a movie scene. You get "
     "only a short context and goal. Decide your next action quickly: brief "
     "reasoning, a concrete simple action, and your mood. Keep it plausible "
-    "but low-key — you are not the focus of the scene."
+    "but low-key — you are not the focus of the scene. If you just noticed "
+    "something that changes what you're trying to do, set new_goal briefly; "
+    "otherwise leave it blank."
 )
 
 

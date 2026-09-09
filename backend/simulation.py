@@ -5,6 +5,16 @@ Demo cast: a noir confrontation scene (2 principal leads, 12 background
 extras) — the "previz crowd simulation" pitch in miniature. Background
 context is rebuilt from an immutable base each tick (base + last action),
 so prompt size stays bounded no matter how many ticks have run.
+
+Chain reactions: after any NPC's tick, chain_reactions.py checks whether
+its own action was dramatic enough for nearby NPCs (proximity.py) to
+plausibly notice, and if so marks them with a notable event for their next
+tick. That neighbor's own next Gemini call then reads what it noticed in
+its context and decides for itself how to react — including, optionally,
+changing its own goal (Decision.new_goal). Nothing here scripts what a
+neighbor does or how far a ripple travels; only whether an action was loud
+enough to notice, and who is close enough to notice it, are decided ahead
+of time.
 """
 
 import asyncio
@@ -12,6 +22,7 @@ import time
 from dataclasses import dataclass
 
 from backend.agents import run_tick
+from backend.chain_reactions import detect_notable_signal, propagate
 from backend.ingest import IngestQueue, upsert_npcs
 from backend.mcp_client import PersistentClickHouseMCP
 from backend.tiering import (
@@ -25,10 +36,12 @@ MAX_CONCURRENT_TICKS = 4
 LOOP_RESOLUTION_SECONDS = 1.0
 
 # (seconds since sim start, npc_id, event_type, payload) — fires once each.
+# payload reads as a first-person continuation of "Just now you ..." (see
+# NPC.current_context), so it must be a present-tense verb phrase.
 EVENT_TIMELINE = [
-    (8.0, "guest-2", "overheard_gossip", "overhears a rumor that changes everything"),
-    (20.0, "photographer", "camera_flash", "camera flash startles the room"),
-    (35.0, "security", "raised_voice", "someone raises their voice near the exit"),
+    (8.0, "guest-2", "scripted_event", "overhear a rumor that changes everything"),
+    (20.0, "photographer", "scripted_event", "get startled by a camera flash from the crowd"),
+    (35.0, "security", "scripted_event", "hear someone raise their voice near the exit"),
 ]
 
 
@@ -44,11 +57,17 @@ class NPC:
     last_tick_ts: float | None = None
     notable_event: bool = False
     notable_payload: str = ""
+    notable_event_type: str = ""
+    notable_source_id: str = ""
+    chain_cooldown_until: float = 0.0
 
     def current_context(self) -> str:
-        if not self.last_action:
-            return self.base_context
-        return f"{self.base_context} Moments ago you: {self.last_action} (feeling {self.mood})."
+        parts = [self.base_context]
+        if self.last_action:
+            parts.append(f"Moments ago you: {self.last_action} (feeling {self.mood}).")
+        if self.notable_event and self.notable_payload:
+            parts.append(f"Just now you {self.notable_payload}.")
+        return " ".join(parts)
 
 
 def build_cast() -> list[NPC]:
@@ -108,7 +127,9 @@ def _apply_timeline(cast_by_id: dict[str, NPC], elapsed: float, fired: set[float
         npc = cast_by_id.get(npc_id)
         if npc:
             npc.notable_event = True
-            npc.notable_payload = f"{event_type}: {payload}"
+            npc.notable_payload = payload
+            npc.notable_event_type = event_type
+            npc.notable_source_id = ""
 
 
 def _stagger_start(cast: list[NPC], start: float):
@@ -162,11 +183,24 @@ async def run_simulation(duration_seconds: float | None = None):
             await ingest.add_context_tick(npc.npc_id, plan.run_tier, context, npc.goal)
             await ingest.add_decision(npc.npc_id, decision.reasoning, decision.action, decision.mood)
             if npc.notable_event:
-                await ingest.add_event(npc.npc_id, "escalation", npc.notable_payload)
+                await ingest.add_event(npc.npc_id, npc.notable_event_type or "escalation", npc.notable_payload)
+
+            if decision.new_goal and decision.new_goal != npc.goal:
+                await ingest.add_event(npc.npc_id, "goal_change", f"{npc.goal} -> {decision.new_goal}")
+                npc.goal = decision.new_goal
+
             npc.mood = decision.mood
             npc.last_action = decision.action
             npc.last_tick_ts = time.time()
             npc.notable_event = False
+
+            if detect_notable_signal(decision.action, decision.reasoning, decision.mood):
+                triggered = propagate(cast_by_id, npc.npc_id, npc.name, decision.action, time.time())
+                if triggered:
+                    await ingest.add_event(
+                        npc.npc_id, "chain_reaction_source",
+                        f"{decision.action} (noticed by: {', '.join(triggered)})",
+                    )
 
         try:
             while duration_seconds is None or (time.time() - start) < duration_seconds:
@@ -193,3 +227,4 @@ async def run_simulation(duration_seconds: float | None = None):
 
 if __name__ == "__main__":
     asyncio.run(run_simulation(duration_seconds=60))
+

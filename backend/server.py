@@ -20,16 +20,34 @@ from backend.scale_sim import ScaleSimulation
 from backend.simulation import run_simulation
 
 LATEST_STATE_QUERY = """
-SELECT n.npc_id, n.name, n.tier,
-       argMax(d.mood, d.ts) AS mood,
-       argMax(d.action, d.ts) AS action,
-       argMax(d.reasoning, d.ts) AS reasoning,
-       max(d.ts) AS last_ts
+SELECT n.npc_id AS npc_id, n.name, n.tier,
+       d.mood, d.action, d.reasoning, d.last_ts,
+       c.goal
 FROM npcs n
-LEFT JOIN decisions d ON n.npc_id = d.npc_id
+LEFT JOIN (
+    SELECT npc_id,
+           argMax(mood, ts) AS mood,
+           argMax(action, ts) AS action,
+           argMax(reasoning, ts) AS reasoning,
+           max(ts) AS last_ts
+    FROM decisions
+    GROUP BY npc_id
+) d ON n.npc_id = d.npc_id
+LEFT JOIN (
+    SELECT npc_id, argMax(goal, ts) AS goal
+    FROM context_ticks
+    GROUP BY npc_id
+) c ON n.npc_id = c.npc_id
 WHERE n.npc_id NOT LIKE 'synth-%'
-GROUP BY n.npc_id, n.name, n.tier
 ORDER BY n.npc_id
+"""
+
+CHAIN_LOG_QUERY = """
+SELECT npc_id, ts, event_type, payload
+FROM events
+WHERE event_type IN ('chain_reaction_source', 'goal_change', 'scripted_event')
+ORDER BY ts DESC
+LIMIT 30
 """
 
 
@@ -86,6 +104,16 @@ async def get_scale():
     counts, live query latency) — cheap even at 500 NPCs since ClickHouse
     only ever returns a small aggregate summary, not per-NPC rows."""
     return await app.state.scale_sim.stats()
+
+
+@app.get("/api/chain-log")
+async def get_chain_log():
+    """Recent emergent chain-reaction events: an NPC's dramatic action
+    rippling to nearby NPCs, and any goals that changed as a result — all
+    decided live by each NPC's own Gemini call, never scripted here."""
+    result = await app.state.mcp.run_query(CHAIN_LOG_QUERY)
+    cols = result["columns"]
+    return [dict(zip(cols, row)) for row in result["rows"]]
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"

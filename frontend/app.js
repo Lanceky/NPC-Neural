@@ -25,6 +25,7 @@ const scaleStatus = document.getElementById("scale-status");
 const scaleView = document.getElementById("scale-view");
 const scaleSwarm = document.getElementById("scale-swarm");
 const scaleStats = document.getElementById("scale-stats");
+const chainLog = document.getElementById("chain-log");
 
 const MOOD_COLORS = {
   neutral: "#7c8ba1", tense: "#c0554a", curious: "#4aa3c0", bored: "#6b6f76",
@@ -62,6 +63,7 @@ function renderSelected() {
   }
   selectedInfo.textContent =
     `${npc.name} (${npc.tier})\n\n` +
+    `Goal: ${npc.goal || "—"}\n\n` +
     `Mood: ${npc.mood || "—"}\n\n` +
     `Action: ${npc.action || "—"}\n\n` +
     `Reasoning: ${npc.reasoning || "—"}\n\n` +
@@ -92,12 +94,15 @@ async function poll() {
 // Minimal, safe markdown: escapes HTML first, then only turns **bold** and
 // newlines into tags -- the model's answers use just enough markdown for
 // this to matter, and nothing more.
-function renderMarkdownLite(text) {
-  const escaped = text
+function escapeHtml(text) {
+  return text
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
-  return escaped
+}
+
+function renderMarkdownLite(text) {
+  return escapeHtml(text)
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\n/g, "<br>");
 }
@@ -194,8 +199,90 @@ async function pollScale() {
   }
 }
 
+// Chain-reaction feed: a domino-effect log built entirely from ClickHouse
+// events that the simulation writes as a side effect of each NPC's own
+// Gemini decision -- nothing here decides what happened, only how to
+// describe it.
+const CHAIN_ICONS = {
+  chain_reaction_source: "🔥",
+  goal_change: "🎯",
+  scripted_event: "🎬",
+};
+const seenChainKeys = new Set();
+let chainLogLoaded = false;
+const rippleTimers = {};
+
+function npcName(npcId) {
+  return (latestById[npcId] && latestById[npcId].name) || npcId;
+}
+
+function pulseNpc(npcId) {
+  const el = elements[npcId];
+  if (!el) return;
+  el.classList.add("rippling");
+  clearTimeout(rippleTimers[npcId]);
+  rippleTimers[npcId] = setTimeout(() => el.classList.remove("rippling"), 2500);
+}
+
+function renderChainEntry(row) {
+  const icon = CHAIN_ICONS[row.event_type] || "•";
+  const name = npcName(row.npc_id);
+  let detail;
+
+  if (row.event_type === "chain_reaction_source") {
+    const match = row.payload.match(/^(.*) \(noticed by: (.*)\)$/);
+    if (match) {
+      const noticedNames = match[2].split(", ").map(npcName).join(", ");
+      detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(match[1])} — noticed by ${escapeHtml(noticedNames)}`;
+    } else {
+      detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(row.payload)}`;
+    }
+  } else if (row.event_type === "goal_change") {
+    const [oldGoal, newGoal] = row.payload.split(" -> ");
+    detail = `<strong>${escapeHtml(name)}</strong> changed goal: “${escapeHtml(oldGoal || "")}” → “${escapeHtml(newGoal || row.payload)}”`;
+  } else {
+    detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(row.payload)}`;
+  }
+  return `<div class="chain-entry">${icon} ${detail}</div>`;
+}
+
+function pulseFromEntry(row) {
+  pulseNpc(row.npc_id);
+  if (row.event_type === "chain_reaction_source") {
+    const match = row.payload.match(/\(noticed by: (.*)\)$/);
+    if (match) {
+      for (const id of match[1].split(", ")) pulseNpc(id.trim());
+    }
+  }
+}
+
+async function pollChainLog() {
+  try {
+    const res = await fetch("/api/chain-log");
+    const rows = await res.json();
+    if (!rows.length) {
+      chainLog.innerHTML = '<p class="chain-empty">Watching for ripple effects…</p>';
+      return;
+    }
+    chainLog.innerHTML = rows.map(renderChainEntry).join("");
+    // Only pulse NPCs for events that appeared since the last poll -- on
+    // first load this would otherwise flash the whole history at once.
+    for (const row of rows) {
+      const key = `${row.ts}|${row.npc_id}|${row.event_type}`;
+      if (seenChainKeys.has(key)) continue;
+      seenChainKeys.add(key);
+      if (chainLogLoaded) pulseFromEntry(row);
+    }
+    chainLogLoaded = true;
+  } catch (err) {
+    console.error("chain log poll failed", err);
+  }
+}
+
 scaleSelect.addEventListener("change", () => setScale(scaleSelect.value));
 setInterval(pollScale, 3000);
 
 poll();
 setInterval(poll, 3000);
+pollChainLog();
+setInterval(pollChainLog, 4000);
