@@ -1,6 +1,5 @@
 # NPC-Neural
 
-
 **Live demo:** https://pmid-turtle-architecture-data.trycloudflare.com
 (a no-signup `cloudflared` quick tunnel — see [Exposing a public
 URL](#exposing-a-public-url); if it's ever offline, run it yourself in a
