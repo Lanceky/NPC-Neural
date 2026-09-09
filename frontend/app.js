@@ -55,6 +55,24 @@ const sceneNodes = new Map(); // npc_id -> node
 let edges = [];               // [[aId, bId], ...] real proximity graph
 let pulses = [];               // traveling light animations between two nodes
 let scaleNodes = [];            // plain array for the scale-test swarm
+let scaleLabels = null;         // pre-rendered offscreen canvas of the swarm's labels
+
+// At or below this many synthetic NPCs each dot is labelled with its full
+// name; above it there is no room, so initials + number are used instead.
+const SCALE_NAME_LIMIT = 100;
+
+// "background extra #7" -> "BE7". Acronym roles like "PA" are kept whole, and
+// the trailing number is preserved so every label stays unique.
+function initialsFor(name) {
+  const text = String(name || "").trim();
+  if (!text) return "";
+  const num = (text.match(/#\s*(\d+)\s*$/) || [])[1] || "";
+  const words = text.replace(/#\s*\d+\s*$/, "").trim().split(/\s+/).filter(Boolean);
+  const letters = words
+    .map((w) => (w === w.toUpperCase() ? w : w[0].toUpperCase()))
+    .join("");
+  return (letters || text.slice(0, 2).toUpperCase()) + num;
+}
 
 // A stable, always-positive pseudo-random number in [0,1) for a given seed --
 // used for deterministic layout jitter so the swarm doesn't reshuffle itself
@@ -107,12 +125,16 @@ function seededShuffle(arr, seedBase) {
 }
 
 function layoutScaleNodes() {
+  scaleLabels = null;
   const count = scaleNodes.length;
   if (count === 0) return;
   const rect = sceneWrap.getBoundingClientRect();
   const margin = 34;
+  // The bottom needs extra room: every dot carries a name underneath it, and
+  // the mood legend is pinned to the bottom-left of the same box.
+  const marginBottom = 72;
   const w = Math.max(1, rect.width - margin * 2);
-  const h = Math.max(1, rect.height - margin * 2);
+  const h = Math.max(1, rect.height - margin - marginBottom);
   // Scatter into randomly chosen cells of an oversized grid, jittered across
   // nearly the whole cell. The spare cells and the full-cell jitter are what
   // break up the rows and columns, so the crowd reads as an organic scatter
@@ -123,6 +145,7 @@ function layoutScaleNodes() {
   const cellW = w / cols, cellH = h / rows;
   const r = Math.min(9, Math.max(2.5, Math.min(cellW, cellH) * 0.4));
   const order = seededShuffle([...Array(cols * rows).keys()], 3.7);
+  const useInitials = count > SCALE_NAME_LIMIT;
   for (let i = 0; i < count; i++) {
     const cell = order[i % order.length];
     const col = cell % cols, row = Math.floor(cell / cols);
@@ -132,7 +155,36 @@ function layoutScaleNodes() {
     n.x = margin + col * cellW + cellW / 2 + jx;
     n.y = margin + row * cellH + cellH / 2 + jy;
     n.r = r;
+    n.label = useInitials ? initialsFor(n.name) : n.name;
   }
+  const fontSize = useInitials
+    ? Math.min(9, Math.max(6.5, cellH * 0.3))
+    : Math.min(11, Math.max(8, cellH * 0.16));
+  buildScaleLabels(rect.width, rect.height, fontSize, cellW * 1.15);
+}
+
+// The labels never animate, so they are drawn once into an offscreen canvas
+// and blitted in a single call per frame -- 500 fillText calls at 60fps would
+// otherwise cost far more than the breathing dots themselves.
+function buildScaleLabels(cssW, cssH, fontSize, maxWidth) {
+  const layer = document.createElement("canvas");
+  layer.width = Math.max(1, Math.round(cssW * dpr));
+  layer.height = Math.max(1, Math.round(cssH * dpr));
+  const g = layer.getContext("2d");
+  g.scale(dpr, dpr);
+  g.font = `${fontSize.toFixed(1)}px system-ui, sans-serif`;
+  g.textAlign = "center";
+  g.textBaseline = "top";
+  g.fillStyle = "rgba(196,204,216,0.92)";
+  for (const n of scaleNodes) {
+    if (!n.label) continue;
+    // Nudge labels near the left/right edges inward so a long name is never
+    // clipped by the canvas boundary.
+    const half = Math.min(maxWidth, g.measureText(n.label).width) / 2;
+    const x = Math.min(Math.max(n.x, half + 2), Math.max(half + 2, cssW - half - 2));
+    g.fillText(n.label, x, n.y + n.r + 3, maxWidth);
+  }
+  scaleLabels = layer;
 }
 
 function ignite(npcId, now, color) {
@@ -257,6 +309,9 @@ function drawScale(now) {
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   }
+  if (scaleLabels) {
+    ctx.drawImage(scaleLabels, 0, 0, scaleLabels.width / dpr, scaleLabels.height / dpr);
+  }
 }
 
 function draw(now) {
@@ -359,9 +414,9 @@ askForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Renders the scale-test swarm as breathing dots colored by the live
-// ClickHouse mood distribution -- an aggregate summary, not per-NPC data,
-// so this stays cheap at any scale.
+// Renders the scale-test swarm as breathing dots, one per synthetic NPC,
+// each carrying that NPC's own name from the npcs table and coloured by its
+// own latest mood -- both read back out of ClickHouse, not invented here.
 function renderScale(data) {
   const active = data.active_count || 0;
   mode = active > 0 ? "scale" : "scene";
@@ -371,6 +426,7 @@ function renderScale(data) {
     scaleStatus.textContent = "";
     scaleStats.innerHTML = "";
     scaleNodes = [];
+    scaleLabels = null;
     return;
   }
 
@@ -378,19 +434,20 @@ function renderScale(data) {
     `${active} synthetic NPCs · ${data.total_rows ?? 0} ClickHouse rows written · ` +
     `aggregate query answered in ${data.query_ms ?? "—"}ms`;
 
-  const colors = [];
-  const moodCounts = Object.entries(data.mood_counts || {}).sort((a, b) => b[1] - a[1]);
-  for (const [mood, count] of moodCounts) {
-    for (let i = 0; i < count; i++) colors.push(MOOD_COLORS[mood] || "#7c8ba1");
+  // Ordered by npc_id server-side, so a given NPC keeps the same dot -- and
+  // therefore the same label and position -- across polls.
+  const roster = data.roster || [];
+  scaleNodes = [];
+  for (let i = 0; i < active; i++) {
+    const npc = roster[i];
+    scaleNodes.push({
+      npcId: npc ? npc.npc_id : null,
+      name: npc ? (npc.name || npc.npc_id) : "",
+      label: "",
+      color: npc ? (MOOD_COLORS[npc.mood] || "#7c8ba1") : "#3a4150",
+      x: 0, y: 0, r: 5, phase: pseudoRandom(i * 31.7) * Math.PI * 2,
+    });
   }
-  while (colors.length < active) colors.push("#3a4150");
-  // The counts arrive grouped by mood; scattering them keeps the aggregate
-  // proportions exactly while stopping each mood from painting a solid band.
-  seededShuffle(colors, 7.13);
-
-  scaleNodes = colors.slice(0, active).map((color, i) => ({
-    color, x: 0, y: 0, r: 5, phase: pseudoRandom(i * 31.7) * Math.PI * 2,
-  }));
   layoutScaleNodes();
 
   scaleStats.innerHTML =

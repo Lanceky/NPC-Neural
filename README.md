@@ -1,7 +1,7 @@
 # NPC-Neural
 
 
-**Live demo:** https://promo-quantities-cottages-providers.trycloudflare.com
+**Live demo:** https://pmid-turtle-architecture-data.trycloudflare.com
 (a no-signup `cloudflared` quick tunnel — see [Exposing a public
 URL](#exposing-a-public-url); if it's ever offline, run it yourself in a
 couple of commands from the same section).
@@ -78,7 +78,10 @@ tables as the real cast, in one batched insert, then runs a live aggregate
 query (mood distribution across the whole set) and reports both timings
 back to the UI — typically well under a second, even at 500. A background
 pulse keeps a rotating sample updating every few seconds so the view stays
-visibly live. This is clearly separated from the real Gemini-reasoned cast
+visibly live. Every dot is labelled with that NPC's own name read back out
+of the `npcs` table and coloured by its own latest mood — full names up to
+100 NPCs, initials plus number above that, where there is no room for more.
+This is clearly separated from the real Gemini-reasoned cast
 (`synth-*` ids, filtered out of `/api/npcs`) so it never competes for quota
 or contaminates the genuine scene.
 

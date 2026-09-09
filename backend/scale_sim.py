@@ -139,7 +139,8 @@ class ScaleSimulation:
 
     async def stats(self) -> dict:
         if self.active_count == 0:
-            return {"active_count": 0, "mood_counts": {}, "total_rows": 0, "recent_rows": 0}
+            return {"active_count": 0, "mood_counts": {}, "total_rows": 0, "recent_rows": 0,
+                    "roster": []}
 
         hi = _synth_id(self.active_count)
         start = time.time()
@@ -167,4 +168,36 @@ class ScaleSimulation:
             "total_rows": total_rows,
             "recent_rows": recent_rows,
             "query_ms": round(query_ms, 1),
+            "roster": await self._roster(hi),
         }
+
+    async def _roster(self, hi: str) -> list[dict]:
+        """Every synthetic NPC's stored name and latest mood, ordered by id.
+
+        The swarm view labels each dot, so it needs the real name from the
+        npcs table rather than one invented in the browser, and each dot's
+        colour comes from that same NPC's own latest mood instead of being
+        dealt out of the aggregate distribution. Ordering by npc_id keeps a
+        given NPC on the same dot across polls.
+        """
+        result = await self._mcp.run_query(f"""
+            SELECT d.npc_id, n.name, d.mood
+            FROM (
+                SELECT npc_id, argMax(mood, ts) AS mood
+                FROM decisions
+                WHERE npc_id LIKE '{ID_PREFIX}%' AND npc_id <= '{hi}'
+                GROUP BY npc_id
+            ) AS d
+            LEFT JOIN (
+                SELECT npc_id, any(name) AS name
+                FROM npcs
+                WHERE npc_id LIKE '{ID_PREFIX}%' AND npc_id <= '{hi}'
+                GROUP BY npc_id
+            ) AS n ON d.npc_id = n.npc_id
+            ORDER BY d.npc_id
+            LIMIT {MAX_COUNT}
+        """)
+        return [
+            {"npc_id": row[0], "name": row[1], "mood": row[2]}
+            for row in result.get("rows") or []
+        ]
