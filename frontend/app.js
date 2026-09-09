@@ -94,21 +94,40 @@ function layoutSceneNodes() {
   }
 }
 
+// Deterministic shuffle, so the same count always produces the same scatter
+// instead of reshuffling itself on every poll or resize.
+function seededShuffle(arr, seedBase) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(pseudoRandom((i + 1) * seedBase) * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
 function layoutScaleNodes() {
   const count = scaleNodes.length;
   if (count === 0) return;
   const rect = sceneWrap.getBoundingClientRect();
-  const margin = 24;
+  const margin = 34;
   const w = Math.max(1, rect.width - margin * 2);
   const h = Math.max(1, rect.height - margin * 2);
-  const cols = Math.max(1, Math.ceil(Math.sqrt(count * (w / h))));
-  const rows = Math.max(1, Math.ceil(count / cols));
+  // Scatter into randomly chosen cells of an oversized grid, jittered across
+  // nearly the whole cell. The spare cells and the full-cell jitter are what
+  // break up the rows and columns, so the crowd reads as an organic scatter
+  // like the live scene rather than as a grid.
+  const cells = Math.ceil(count * 1.7);
+  const cols = Math.max(1, Math.round(Math.sqrt(cells * (w / h))));
+  const rows = Math.max(1, Math.ceil(cells / cols));
   const cellW = w / cols, cellH = h / rows;
-  const r = Math.min(9, Math.max(2.5, Math.min(cellW, cellH) * 0.32));
+  const r = Math.min(9, Math.max(2.5, Math.min(cellW, cellH) * 0.4));
+  const order = seededShuffle([...Array(cols * rows).keys()], 3.7);
   for (let i = 0; i < count; i++) {
-    const col = i % cols, row = Math.floor(i / cols);
-    const jx = (pseudoRandom(i * 12.9898) - 0.5) * cellW * 0.35;
-    const jy = (pseudoRandom(i * 78.233) - 0.5) * cellH * 0.35;
+    const cell = order[i % order.length];
+    const col = cell % cols, row = Math.floor(cell / cols);
+    const jx = (pseudoRandom(i * 12.9898 + 1) - 0.5) * cellW * 0.9;
+    const jy = (pseudoRandom(i * 78.233 + 1) - 0.5) * cellH * 0.9;
     const n = scaleNodes[i];
     n.x = margin + col * cellW + cellW / 2 + jx;
     n.y = margin + row * cellH + cellH / 2 + jy;
@@ -227,12 +246,15 @@ function drawScene(now) {
 
 function drawScale(now) {
   for (const n of scaleNodes) {
-    const breathe = Math.sin(now / 1300 + n.phase) * 0.5 + 0.5;
+    const breathe = Math.sin(now / 1400 + n.phase) * 0.5 + 0.5;
     ctx.beginPath();
     ctx.globalAlpha = 0.65 + 0.35 * breathe;
     ctx.fillStyle = n.color;
+    ctx.shadowColor = n.color;
+    ctx.shadowBlur = 5 + breathe * 5;
     ctx.arc(n.x, n.y, n.r * (0.85 + breathe * 0.3), 0, Math.PI * 2);
     ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   }
 }
@@ -362,6 +384,9 @@ function renderScale(data) {
     for (let i = 0; i < count; i++) colors.push(MOOD_COLORS[mood] || "#7c8ba1");
   }
   while (colors.length < active) colors.push("#3a4150");
+  // The counts arrive grouped by mood; scattering them keeps the aggregate
+  // proportions exactly while stopping each mood from painting a solid band.
+  seededShuffle(colors, 7.13);
 
   scaleNodes = colors.slice(0, active).map((color, i) => ({
     color, x: 0, y: 0, r: 5, phase: pseudoRandom(i * 31.7) * Math.PI * 2,
