@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: npc-neural
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /
+    envVars:
+      - key: CLICKHOUSE_HOST
+        sync: false
+      - key: CLICKHOUSE_PORT
+        value: "8443"
+      - key: CLICKHOUSE_USER
+        value: default
+      - key: CLICKHOUSE_PASSWORD
+        sync: false
+      - key: CLICKHOUSE_SECURE
+        value: "true"
+      - key: CLICKHOUSE_VERIFY
+        value: "true"
+      - key: CLICKHOUSE_CONNECT_TIMEOUT
+        value: "30"
+      - key: CLICKHOUSE_ALLOW_WRITE_ACCESS
+        value: "false"
+      - key: GOOGLE_GENAI_USE_VERTEXAI
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL_PRINCIPAL
+        value: gemini-3.5-flash
+      - key: GEMINI_MODEL_BACKGROUND
+        value: gemini-flash-lite-latest
