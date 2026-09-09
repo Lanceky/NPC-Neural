@@ -88,3 +88,15 @@ class PersistentClickHouseMCP:
             if result.is_error:
                 raise RuntimeError(f"run_query failed: {_first_text(result)}")
             return json.loads(_first_text(result))
+
+    async def list_tools(self) -> list[dict[str, str]]:
+        """The tools this live mcp-clickhouse session actually advertises."""
+        async with self._lock:
+            result = await self.session.list_tools()
+        tools = []
+        for t in result.tools:
+            summary = (t.description or "").strip().splitlines()[0]
+            if len(summary) > 120:
+                summary = summary[:117].rstrip() + "…"
+            tools.append({"name": t.name, "description": summary})
+        return tools

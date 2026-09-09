@@ -109,6 +109,17 @@ an instant, simultaneous flash. `GET /api/proximity` exposes the same graph
 `chain_reactions.py` uses, so the picture is the real mechanism, not a
 decorative recreation of it.
 
+### ClickHouse console
+
+The **Console** button in the top-right of the scene opens a live read-out of
+the integration: the ClickHouse Cloud connection settings, the `mcp-clickhouse`
+tools every query is routed through, the deployed schema with real row counts
+and part sizes, the event stream broken down by type, and the most recent
+decisions the cast has actually written. Everything in it is fetched at request
+time from `GET /api/console` through the same MCP session the scene uses —
+nothing is hardcoded. Credentials are never sent to the browser, and the
+ClickHouse Cloud hostname is partially masked since the demo is public.
+
 ### Notes on ADK's `McpToolset`
 
 The installed `mcp-clickhouse` release requires `mcp>=2.0`, while `google-adk`'s

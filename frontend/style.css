@@ -14,6 +14,7 @@ body {
 header {
   padding: 1rem 1.5rem;
   border-bottom: 1px solid #2a2f38;
+  position: relative;
 }
 
 header h1 {
@@ -201,4 +202,211 @@ main {
   line-height: 1.4;
   white-space: pre-wrap;
   color: #cfd4dc;
+}
+
+#console-btn {
+  position: absolute;
+  top: 1rem;
+  right: 1.5rem;
+  background: #1c2027;
+  color: #d4af37;
+  border: 1px solid #d4af37;
+  border-radius: 3px;
+  padding: 0.5rem 1.1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+#console-btn:hover {
+  background: #d4af37;
+  color: #14171c;
+}
+
+#console-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(8, 10, 13, 0.78);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+#console-overlay[hidden] {
+  display: none;
+}
+
+#console-panel {
+  background: #14171c;
+  border: 1px solid #2a2f38;
+  border-radius: 6px;
+  width: min(980px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.5rem;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+}
+
+#console-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#console-head h2 {
+  margin: 0;
+  color: #d4af37;
+  font-size: 1.1rem;
+  letter-spacing: 0.05em;
+}
+
+#console-close {
+  background: #1c2027;
+  color: #cfd4dc;
+  border: 1px solid #3a4150;
+  border-radius: 3px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+#console-close:hover {
+  border-color: #d4af37;
+  color: #d4af37;
+}
+
+#console-body {
+  overflow-y: auto;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.console-section {
+  margin-top: 1.25rem;
+}
+
+.console-section > h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.78rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #d4af37;
+  border-bottom: 1px solid #2a2f38;
+  padding-bottom: 0.3rem;
+}
+
+.kv {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0.35rem 1.25rem;
+}
+
+.kv div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px dotted #262b33;
+  padding-bottom: 0.2rem;
+}
+
+.kv span:first-child {
+  color: #9aa3b2;
+}
+
+.kv span:last-child {
+  color: #e8e6df;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.console-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.76rem;
+}
+
+.console-table th {
+  text-align: left;
+  color: #9aa3b2;
+  font-weight: 500;
+  border-bottom: 1px solid #2a2f38;
+  padding: 0.3rem 0.6rem 0.3rem 0;
+}
+
+.console-table td {
+  padding: 0.28rem 0.6rem 0.28rem 0;
+  border-bottom: 1px solid #1e222a;
+  color: #cfd4dc;
+  vertical-align: top;
+}
+
+.console-table td.num {
+  text-align: right;
+  color: #d4af37;
+}
+
+.console-card {
+  border: 1px solid #262b33;
+  border-radius: 4px;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.6rem;
+  background: #171b21;
+}
+
+.console-card > header {
+  border: 0;
+  padding: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.console-card h4 {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+  color: #e8e6df;
+}
+
+.console-card .meta {
+  color: #9aa3b2;
+  font-size: 0.74rem;
+}
+
+.console-cols {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+}
+
+.console-cols code {
+  background: #1c2027;
+  border: 1px solid #2a2f38;
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.72rem;
+  color: #cfd4dc;
+}
+
+.console-cols code b {
+  color: #7fd4c8;
+  font-weight: 600;
+}
+
+.console-foot {
+  margin-top: 1.25rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #2a2f38;
+  color: #9aa3b2;
+  font-size: 0.78rem;
 }

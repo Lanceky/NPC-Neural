@@ -536,3 +536,127 @@ poll();
 setInterval(poll, 3000);
 pollChainLog();
 setInterval(pollChainLog, 4000);
+
+// --- ClickHouse console -----------------------------------------------------
+
+const consoleBtn = document.getElementById("console-btn");
+const consoleOverlay = document.getElementById("console-overlay");
+const consoleClose = document.getElementById("console-close");
+const consoleBody = document.getElementById("console-body");
+
+function formatBytes(n) {
+  const bytes = Number(n) || 0;
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let v = bytes / 1024, i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(1)} ${units[i]}`;
+}
+
+function formatNumber(n) {
+  return Number(n || 0).toLocaleString("en-US");
+}
+
+function kvRows(pairs) {
+  return `<div class="kv">${pairs
+    .filter(([, v]) => v !== "" && v !== null && v !== undefined)
+    .map(([k, v]) => `<div><span>${escapeHtml(k)}</span><span>${escapeHtml(String(v))}</span></div>`)
+    .join("")}</div>`;
+}
+
+function renderConsole(data) {
+  const ch = data.clickhouse || {};
+  const mcp = data.mcp || {};
+  const gem = data.gemini || {};
+
+  const connection = kvRows([
+    ["Host", ch.host],
+    ["Port", ch.port],
+    ["User", ch.user],
+    ["TLS", ch.secure],
+    ["Verify certs", ch.verify_certs],
+    ["Connect timeout", ch.connect_timeout_s ? `${ch.connect_timeout_s}s` : ""],
+    ["Password", ch.credential_configured ? "configured" : "not set"],
+    ["Server version", ch.server_version],
+    ["Database", ch.database],
+    ["Server uptime", ch.uptime_seconds ? `${formatNumber(ch.uptime_seconds)}s` : ""],
+    ["Server timezone", ch.server_timezone],
+  ]);
+
+  const sessions = (mcp.sessions || [])
+    .map((s) => `${s.name}: write ${s.write_access ? "on" : "off"}`)
+    .join(" · ");
+  const access = kvRows([
+    ["MCP server", mcp.server],
+    ["Transport", mcp.transport],
+    ["Sessions", sessions],
+  ]);
+  const tools = `<table class="console-table"><tr><th>Tool</th><th>Description</th></tr>${
+    (mcp.tools || [])
+      .map((t) => `<tr><td>${escapeHtml(t.name)}</td><td>${escapeHtml(t.description)}</td></tr>`)
+      .join("")
+  }</table>`;
+
+  const tables = (data.tables || [])
+    .map((t) => `<div class="console-card">
+      <header><h4>${escapeHtml(t.name)}</h4>
+        <span class="meta">${escapeHtml(t.engine)} · ORDER BY ${escapeHtml(t.sorting_key || "—")}
+        · ${formatNumber(t.total_rows)} rows · ${formatBytes(t.total_bytes)}</span></header>
+      <div class="console-cols">${
+        (t.columns || [])
+          .map((c) => `<code><b>${escapeHtml(c.name)}</b> ${escapeHtml(c.type)}</code>`)
+          .join("")
+      }</div></div>`)
+    .join("");
+
+  const eventTypes = `<table class="console-table"><tr><th>event_type</th><th>rows</th></tr>${
+    (data.event_types || [])
+      .map((e) => `<tr><td>${escapeHtml(e.event_type)}</td><td class="num">${formatNumber(e.n)}</td></tr>`)
+      .join("")
+  }</table>`;
+
+  const recent = `<table class="console-table"><tr><th>npc_id</th><th>name</th><th>ts</th><th>mood</th><th>action</th></tr>${
+    (data.recent_decisions || [])
+      .map((r) => `<tr><td>${escapeHtml(r.npc_id)}</td><td>${escapeHtml(r.name || "")}</td>
+        <td>${escapeHtml(r.ts)}</td>
+        <td>${escapeHtml(r.mood)}</td><td>${escapeHtml(r.action)}</td></tr>`)
+      .join("")
+  }</table>`;
+
+  consoleBody.innerHTML = `
+    <div class="console-section"><h3>ClickHouse Cloud connection</h3>${connection}</div>
+    <div class="console-section"><h3>Access path — every query goes through MCP</h3>${access}${tools}</div>
+    <div class="console-section"><h3>Gemini models</h3>${kvRows([
+      ["Principal tier", gem.principal_model],
+      ["Background tier", gem.background_model],
+      ["Vertex AI", gem.use_vertex_ai],
+      ["API key", gem.credential_configured ? "configured" : "not set"],
+    ])}</div>
+    <div class="console-section"><h3>Deployed schema — live row counts</h3>${tables}</div>
+    <div class="console-section"><h3>Event stream by type</h3>${eventTypes}</div>
+    <div class="console-section"><h3>Latest decisions written</h3>${recent}</div>
+    <p class="console-foot">6 live queries via mcp-clickhouse <code>run_query</code>,
+      round trip ${escapeHtml(String(data.query_ms))}ms. Credentials are never sent to the browser.</p>`;
+}
+
+async function openConsole() {
+  consoleOverlay.hidden = false;
+  consoleBody.textContent = "Querying ClickHouse…";
+  try {
+    const res = await fetch("/api/console");
+    if (!res.ok) throw new Error(res.status);
+    renderConsole(await res.json());
+  } catch (err) {
+    console.error("console load failed", err);
+    consoleBody.textContent = "Could not reach ClickHouse through the MCP server.";
+  }
+}
+
+consoleBtn.addEventListener("click", openConsole);
+consoleClose.addEventListener("click", () => { consoleOverlay.hidden = true; });
+consoleOverlay.addEventListener("click", (e) => {
+  if (e.target === consoleOverlay) consoleOverlay.hidden = true;
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") consoleOverlay.hidden = true;
+});
