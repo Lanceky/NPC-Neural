@@ -1,9 +1,9 @@
 # NPC-Neural
 
-**Live demo:** https://unlike-glasgow-definition-minute.trycloudflare.com
-(a no-signup `cloudflared` quick tunnel — see [Exposing a public
-URL](#exposing-a-public-url); if it's ever offline, run it yourself in a
-couple of commands from the same section).
+**Live demo:** https://npc-neural.onrender.com
+(deployed from this repo's `Dockerfile` via the included `render.yaml`
+blueprint; if it's ever offline, see [Running it
+yourself](#exposing-a-public-url)).
 
 A live simulation of a movie scene where every character — from the two leads
 down to the bartender and valet — is an independent Gemini agent deciding its
