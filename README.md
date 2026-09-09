@@ -84,6 +84,23 @@ visibly live. This is clearly separated from the real Gemini-reasoned cast
 (`synth-*` ids, filtered out of `/api/npcs`) so it never competes for quota
 or contaminates the genuine scene.
 
+### Emergent chain reactions
+
+NPCs react to each other, not just to scripted events. Two deliberately
+"dumb" authored pieces set the *constraints* — a static proximity graph
+(`backend/proximity.py`, who can plausibly notice whom) and a keyword-based
+notability check (`backend/chain_reactions.py`, is this action loud enough
+to notice) — but neither decides what happens next. When a tick is notable,
+its neighbors simply get the real action text folded into their own next
+`current_context()` (`backend/simulation.py`); whatever they do with that,
+including an optional `Decision.new_goal`, is entirely their own next Gemini
+call. Nothing hand-writes the ripple. Live example pulled straight from
+`/api/chain-log` during one run: a waiter ducking through the crowd was
+noticed by three neighbors, one of them changed goal and was in turn noticed
+by the suspect, who abandoned "protect your reputation" for "rally the
+crowd's sympathy" — a five-NPC domino effect from one seed action, visible
+in the "Emergent Chain Reactions" panel on the live scene.
+
 ### Notes on ADK's `McpToolset`
 
 The installed `mcp-clickhouse` release requires `mcp>=2.0`, while `google-adk`'s
