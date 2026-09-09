@@ -9,21 +9,8 @@
   <header>
     <h1>NPC-Neural</h1>
     <p>Manor Bar Confrontation — live agentic crowd, powered by Gemini + ClickHouse</p>
-    <button id="console-btn" type="button">Console</button>
+    <a id="console-btn" href="console.html">Console</a>
   </header>
-
-  <div id="console-overlay" hidden>
-    <div id="console-panel">
-      <div id="console-head">
-        <h2>ClickHouse Console</h2>
-        <button id="console-close" type="button">Close</button>
-      </div>
-      <p class="panel-hint">Read live through the same mcp-clickhouse session the
-        scene uses — connection settings, MCP tools, deployed schema with real
-        row counts, and the rows being written right now.</p>
-      <div id="console-body">Loading…</div>
-    </div>
-  </div>
 
   <div id="scale-bar">
     <label for="scale-select">Scale test — ClickHouse throughput at crowd scale:</label>

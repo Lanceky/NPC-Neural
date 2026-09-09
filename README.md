@@ -111,13 +111,12 @@ decorative recreation of it.
 
 ### ClickHouse console
 
-The **Console** button in the top-right of the scene opens a live read-out of
-the integration: the ClickHouse Cloud connection settings, the `mcp-clickhouse`
-tools every query is routed through, the deployed schema with real row counts
-and part sizes, the event stream broken down by type, and the most recent
-decisions the cast has actually written. Everything in it is fetched at request
-time from `GET /api/console` through the same MCP session the scene uses —
-nothing is hardcoded. Credentials are never sent to the browser, and the
+The **Console** button in the top-right of the scene opens `console.html`, a
+separate page with five at-a-glance panels: the ClickHouse Cloud connection,
+the MCP access path and its tools, the Gemini models, the deployed tables with
+live row counts, and current activity. It is served by `GET /api/console`,
+which reads everything at request time through the same MCP session the scene
+uses — nothing in it is hardcoded. Credentials stay on the server, and the
 ClickHouse Cloud hostname is partially masked since the demo is public.
 
 ### Notes on ADK's `McpToolset`
