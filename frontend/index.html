@@ -11,12 +11,40 @@
     <p>Manor Bar Confrontation — live agentic crowd, powered by Gemini + ClickHouse</p>
   </header>
 
+  <div id="scale-bar">
+    <label for="scale-select">Scale test — ClickHouse throughput at crowd scale:</label>
+    <select id="scale-select">
+      <option value="0" selected>Off (live Gemini scene)</option>
+      <option value="10">10 NPCs</option>
+      <option value="50">50 NPCs</option>
+      <option value="100">100 NPCs</option>
+      <option value="250">250 NPCs</option>
+      <option value="500">500 NPCs</option>
+    </select>
+    <span id="scale-status"></span>
+  </div>
+
   <main>
     <div id="scene"></div>
 
+    <div id="scale-view" hidden>
+      <div id="scale-swarm"></div>
+      <div id="scale-legend">
+        <span><i style="background:#7c8ba1"></i>neutral</span>
+        <span><i style="background:#c0554a"></i>tense</span>
+        <span><i style="background:#4aa3c0"></i>curious</span>
+        <span><i style="background:#6b6f76"></i>bored</span>
+        <span><i style="background:#d4af37"></i>alert</span>
+        <span><i style="background:#b06fc9"></i>nervous</span>
+        <span><i style="background:#5fbf6a"></i>amused</span>
+        <span><i style="background:#e0a63c"></i>focused</span>
+      </div>
+    </div>
+
     <aside id="panel">
-      <h2>Director's Inspector</h2>
+      <h2 id="panel-title">Director's Inspector</h2>
       <div id="selected-info">Click an NPC to inspect their latest decision.</div>
+      <div id="scale-stats"></div>
 
       <form id="ask-form">
         <input id="ask-input" type="text" placeholder="Ask about the scene…" autocomplete="off">
