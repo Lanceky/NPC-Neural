@@ -101,6 +101,14 @@ by the suspect, who abandoned "protect your reputation" for "rally the
 crowd's sympathy" — a five-NPC domino effect from one seed action, visible
 in the "Emergent Chain Reactions" panel on the live scene.
 
+The scene itself is drawn as that same graph: every NPC is a calm, breathing
+teal point of light, the faint lines are the real proximity edges above, and
+a reaction is rendered as light physically traveling node-to-node along
+those lines at a visible speed before the destination node ignites — never
+an instant, simultaneous flash. `GET /api/proximity` exposes the same graph
+`chain_reactions.py` uses, so the picture is the real mechanism, not a
+decorative recreation of it.
+
 ### Notes on ADK's `McpToolset`
 
 The installed `mcp-clickhouse` release requires `mcp>=2.0`, while `google-adk`'s
