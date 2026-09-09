@@ -210,9 +210,13 @@ cloudflared tunnel --url http://localhost:8000
 ```
 
 This prints a public `https://*.trycloudflare.com` URL that proxies straight
-to your local server — no account or billing setup required. For a persistent
-deployment, the included `Dockerfile` runs as-is on Cloud Run, Render,
-Railway, Fly.io, or any container host.
+to your local server — no account or billing setup required.
+
+For a persistent deployment, the included `Dockerfile` runs as-is on Cloud
+Run, Render, Railway, Fly.io, or any container host. The live demo above is
+deployed on Render from the included `render.yaml` blueprint: point Render at
+a fork of this repo and supply `CLICKHOUSE_HOST`, `CLICKHOUSE_PASSWORD`, and
+`GEMINI_API_KEY` as secrets — the remaining variables are pre-filled.
 
 ## Tech stack
 
