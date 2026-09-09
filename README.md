@@ -66,6 +66,24 @@ one of them did what they did.
   character to see their live state, or ask the Director's Assistant a
   question in plain English.
 
+### Scaling from 10 to 500 NPCs
+
+The frontend has a "Scale test" menu (10/50/100/250/500) that answers a
+different question than the live scene does: Gemini reasoning is
+deliberately tiered and rate-limited (free-tier quota is shared and small —
+see below), so hundreds of *live* model calls per minute was never the
+target. What genuinely has to scale to a crowd is the data layer — writing
+every character's tick and answering aggregate questions about all of them
+in real time. Picking a count in the menu (`backend/scale_sim.py`) writes
+that many templated (non-model) decision ticks through the same ClickHouse
+tables as the real cast, in one batched insert, then runs a live aggregate
+query (mood distribution across the whole set) and reports both timings
+back to the UI — typically well under a second, even at 500. A background
+pulse keeps a rotating sample updating every few seconds so the view stays
+visibly live. This is clearly separated from the real Gemini-reasoned cast
+(`synth-*` ids, filtered out of `/api/npcs`) so it never competes for quota
+or contaminates the genuine scene.
+
 ### Notes on ADK's `McpToolset`
 
 The installed `mcp-clickhouse` release requires `mcp>=2.0`, while `google-adk`'s
