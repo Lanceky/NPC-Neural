@@ -16,8 +16,14 @@ from pydantic import BaseModel
 
 from backend.inspect_agent import inspect
 from backend.mcp_client import PersistentClickHouseMCP
+from backend.proximity import PROXIMITY
 from backend.scale_sim import ScaleSimulation
 from backend.simulation import run_simulation
+
+# The same static adjacency graph chain_reactions.propagate() reads to decide
+# who can notice whom, flattened into an edge list so the frontend draws the
+# real influence graph instead of a decorative recreation of it.
+PROXIMITY_EDGES = sorted({tuple(sorted((a, b))) for a, neighbors in PROXIMITY.items() for b in neighbors})
 
 LATEST_STATE_QUERY = """
 SELECT n.npc_id AS npc_id, n.name, n.tier,
@@ -104,6 +110,13 @@ async def get_scale():
     counts, live query latency) — cheap even at 500 NPCs since ClickHouse
     only ever returns a small aggregate summary, not per-NPC rows."""
     return await app.state.scale_sim.stats()
+
+
+@app.get("/api/proximity")
+async def get_proximity():
+    """The static who-can-notice-whom graph, as edges, so the frontend can
+    draw the real influence network instead of a decorative recreation."""
+    return {"edges": [list(e) for e in PROXIMITY_EDGES]}
 
 
 @app.get("/api/chain-log")

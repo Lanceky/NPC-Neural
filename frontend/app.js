@@ -1,3 +1,9 @@
+// Synaptic cascade view: every NPC is a soft breathing point of light on a
+// canvas. Faint lines are the real proximity graph chain_reactions.py uses
+// to decide who can notice whom. When a chain reaction fires, light travels
+// node-to-node along those real edges at a visible speed -- nothing here
+// decides the reaction itself, only how to show it.
+
 const LAYOUT = {
   detective: [40, 55],
   suspect: [60, 55],
@@ -15,15 +21,23 @@ const LAYOUT = {
   coatcheck: [6, 88],
 };
 
-const scene = document.getElementById("scene");
+const IDLE_COLOR = [56, 205, 191];   // cool teal -- resting state
+const FLARE_COLOR = [255, 106, 74];  // warm coral -- a chain reaction fired here
+const SCRIPT_COLOR = [140, 190, 255]; // cool blue -- an authored beat, not a chain
+const GOLD = [212, 175, 55];         // principal accent / goal-change ping
+const GLOW_DECAY_MS = 1400;
+const GOAL_PING_MS = 700;
+
+const sceneWrap = document.getElementById("scene");
+const canvas = document.getElementById("scene-canvas");
+const ctx = canvas.getContext("2d");
+const scaleLegend = document.getElementById("scale-legend");
 const selectedInfo = document.getElementById("selected-info");
 const askForm = document.getElementById("ask-form");
 const askInput = document.getElementById("ask-input");
 const askAnswer = document.getElementById("ask-answer");
 const scaleSelect = document.getElementById("scale-select");
 const scaleStatus = document.getElementById("scale-status");
-const scaleView = document.getElementById("scale-view");
-const scaleSwarm = document.getElementById("scale-swarm");
 const scaleStats = document.getElementById("scale-stats");
 const chainLog = document.getElementById("chain-log");
 
@@ -32,26 +46,221 @@ const MOOD_COLORS = {
   alert: "#d4af37", nervous: "#b06fc9", amused: "#5fbf6a", focused: "#e0a63c",
 };
 
+let mode = "scene"; // "scene" | "scale"
 let selectedId = null;
 let latestById = {};
-const elements = {};
+let dpr = Math.max(1, window.devicePixelRatio || 1);
 
-function ensureElement(npcId) {
-  if (elements[npcId]) return elements[npcId];
-  const el = document.createElement("div");
-  el.className = "npc";
-  el.innerHTML = '<div class="dot"></div><div class="label"></div><div class="mood"></div>';
-  el.addEventListener("click", () => selectNpc(npcId));
-  scene.appendChild(el);
-  elements[npcId] = el;
-  return el;
+const sceneNodes = new Map(); // npc_id -> node
+let edges = [];               // [[aId, bId], ...] real proximity graph
+let pulses = [];               // traveling light animations between two nodes
+let scaleNodes = [];            // plain array for the scale-test swarm
+
+// A stable, always-positive pseudo-random number in [0,1) for a given seed --
+// used for deterministic layout jitter so the swarm doesn't reshuffle itself
+// on every redraw.
+function pseudoRandom(seed) {
+  const x = Math.sin(seed) * 43758.5453;
+  return x - Math.floor(x);
 }
+
+function resizeCanvas() {
+  const rect = sceneWrap.getBoundingClientRect();
+  canvas.width = Math.max(1, rect.width * dpr);
+  canvas.height = Math.max(1, rect.height * dpr);
+  canvas.style.width = rect.width + "px";
+  canvas.style.height = rect.height + "px";
+  layoutSceneNodes();
+  layoutScaleNodes();
+}
+window.addEventListener("resize", resizeCanvas);
+
+function ensureSceneNode(npcId) {
+  let n = sceneNodes.get(npcId);
+  if (!n) {
+    n = { id: npcId, x: 0, y: 0, glowStart: -Infinity, glowColor: FLARE_COLOR,
+          goalPingStart: -Infinity, phase: Math.random() * Math.PI * 2 };
+    sceneNodes.set(npcId, n);
+  }
+  return n;
+}
+
+function layoutSceneNodes() {
+  const rect = sceneWrap.getBoundingClientRect();
+  for (const [npcId, pos] of Object.entries(LAYOUT)) {
+    const n = ensureSceneNode(npcId);
+    n.x = (pos[0] / 100) * rect.width;
+    n.y = (pos[1] / 100) * rect.height;
+  }
+}
+
+function layoutScaleNodes() {
+  const count = scaleNodes.length;
+  if (count === 0) return;
+  const rect = sceneWrap.getBoundingClientRect();
+  const margin = 24;
+  const w = Math.max(1, rect.width - margin * 2);
+  const h = Math.max(1, rect.height - margin * 2);
+  const cols = Math.max(1, Math.ceil(Math.sqrt(count * (w / h))));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const cellW = w / cols, cellH = h / rows;
+  const r = Math.min(9, Math.max(2.5, Math.min(cellW, cellH) * 0.32));
+  for (let i = 0; i < count; i++) {
+    const col = i % cols, row = Math.floor(i / cols);
+    const jx = (pseudoRandom(i * 12.9898) - 0.5) * cellW * 0.35;
+    const jy = (pseudoRandom(i * 78.233) - 0.5) * cellH * 0.35;
+    const n = scaleNodes[i];
+    n.x = margin + col * cellW + cellW / 2 + jx;
+    n.y = margin + row * cellH + cellH / 2 + jy;
+    n.r = r;
+  }
+}
+
+function ignite(npcId, now, color) {
+  const n = sceneNodes.get(npcId);
+  if (!n) return;
+  n.glowStart = now;
+  n.glowColor = color || FLARE_COLOR;
+}
+
+function currentGlow(n, now) {
+  const dt = now - n.glowStart;
+  if (dt < 0) return 0;
+  return Math.max(0, 1 - dt / GLOW_DECAY_MS);
+}
+
+function lerpColor(a, b, t) {
+  return `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)}, ${Math.round(a[1] + (b[1] - a[1]) * t)}, ${Math.round(a[2] + (b[2] - a[2]) * t)})`;
+}
+
+function drawScene(now) {
+  // Faint idle lines are the real proximity graph; they brighten locally as
+  // a traveling pulse passes through that specific edge.
+  for (const [a, b] of edges) {
+    const na = sceneNodes.get(a), nb = sceneNodes.get(b);
+    if (!na || !nb) continue;
+    let heat = 0;
+    for (const p of pulses) {
+      if ((p.a === a && p.b === b) || (p.a === b && p.b === a)) {
+        const t = (now - p.start) / p.duration;
+        if (t >= 0 && t <= 1) heat = Math.max(heat, 1 - Math.abs(t - 0.5) * 2);
+      }
+    }
+    ctx.beginPath();
+    ctx.strokeStyle = heat > 0 ? `rgba(255,138,101,${0.2 + 0.65 * heat})` : "rgba(56,205,191,0.14)";
+    ctx.lineWidth = heat > 0 ? 1.4 + 2 * heat : 1;
+    ctx.moveTo(na.x, na.y);
+    ctx.lineTo(nb.x, nb.y);
+    ctx.stroke();
+  }
+
+  // Traveling light: a bright point moving along its edge; on arrival it
+  // ignites the target node exactly once.
+  for (const p of pulses) {
+    if (now < p.start) continue;
+    const na = sceneNodes.get(p.a), nb = sceneNodes.get(p.b);
+    if (!na || !nb) continue;
+    const t = Math.min(1, (now - p.start) / p.duration);
+    const x = na.x + (nb.x - na.x) * t;
+    const y = na.y + (nb.y - na.y) * t;
+    ctx.beginPath();
+    ctx.shadowColor = "rgba(255,138,101,0.9)";
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = "rgba(255,205,170,0.95)";
+    ctx.arc(x, y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (t >= 1 && !p.arrived) {
+      p.arrived = true;
+      ignite(p.b, now, p.color || FLARE_COLOR);
+    }
+  }
+  pulses = pulses.filter((p) => now - p.start <= p.duration * 1.05);
+
+  for (const n of sceneNodes.values()) {
+    const npc = latestById[n.id];
+    const glow = currentGlow(n, now);
+    const breathe = Math.sin(now / 1400 + n.phase) * 0.5 + 0.5;
+    const isPrincipal = npc && npc.tier === "principal";
+    const baseR = (isPrincipal ? 10 : 6.5) + breathe * 1.1;
+    const r = baseR + glow * 4;
+    const color = glow > 0.02 ? lerpColor(IDLE_COLOR, n.glowColor, glow) : `rgb(${IDLE_COLOR.join(",")})`;
+
+    if (now - n.goalPingStart < GOAL_PING_MS) {
+      const pt = (now - n.goalPingStart) / GOAL_PING_MS;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(212,175,55,${1 - pt})`;
+      ctx.lineWidth = 2;
+      ctx.arc(n.x, n.y, r + pt * 16, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.fillStyle = color;
+    ctx.shadowColor = glow > 0.05 ? "rgba(255,106,74,0.85)" : "rgba(56,205,191,0.4)";
+    ctx.shadowBlur = 6 + glow * 10;
+    ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    if (isPrincipal) {
+      ctx.beginPath();
+      ctx.strokeStyle = "rgba(212,175,55,0.9)";
+      ctx.lineWidth = 1.5;
+      ctx.arc(n.x, n.y, r + 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    if (n.id === selectedId) {
+      ctx.beginPath();
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 1.5;
+      ctx.arc(n.x, n.y, r + 5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.fillStyle = "#cfd4dc";
+    ctx.font = "11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText((npc && npc.name) || n.id, n.x, n.y + r + 13);
+  }
+}
+
+function drawScale(now) {
+  for (const n of scaleNodes) {
+    const breathe = Math.sin(now / 1300 + n.phase) * 0.5 + 0.5;
+    ctx.beginPath();
+    ctx.globalAlpha = 0.65 + 0.35 * breathe;
+    ctx.fillStyle = n.color;
+    ctx.arc(n.x, n.y, n.r * (0.85 + breathe * 0.3), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+}
+
+function draw(now) {
+  ctx.save();
+  ctx.scale(dpr, dpr);
+  const cssW = canvas.width / dpr, cssH = canvas.height / dpr;
+  ctx.clearRect(0, 0, cssW, cssH);
+  if (mode === "scene") drawScene(now); else drawScale(now);
+  ctx.restore();
+  requestAnimationFrame(draw);
+}
+
+canvas.addEventListener("click", (ev) => {
+  if (mode !== "scene") return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = ev.clientX - rect.left, my = ev.clientY - rect.top;
+  let closest = null, closestDist = Infinity;
+  for (const n of sceneNodes.values()) {
+    const d = Math.hypot(n.x - mx, n.y - my);
+    if (d < closestDist) { closestDist = d; closest = n; }
+  }
+  if (closest && closestDist <= 24) selectNpc(closest.id);
+});
 
 function selectNpc(npcId) {
   selectedId = npcId;
-  for (const [id, el] of Object.entries(elements)) {
-    el.classList.toggle("selected", id === npcId);
-  }
   renderSelected();
 }
 
@@ -75,19 +284,22 @@ async function poll() {
     const res = await fetch("/api/npcs");
     const npcs = await res.json();
     for (const npc of npcs) {
-      const pos = LAYOUT[npc.npc_id];
-      if (!pos) continue;
+      if (!LAYOUT[npc.npc_id]) continue;
       latestById[npc.npc_id] = npc;
-      const el = ensureElement(npc.npc_id);
-      el.classList.toggle("principal", npc.tier === "principal");
-      el.style.left = pos[0] + "%";
-      el.style.top = pos[1] + "%";
-      el.querySelector(".label").textContent = npc.name;
-      el.querySelector(".mood").textContent = npc.mood || "";
     }
     if (selectedId) renderSelected();
   } catch (err) {
     console.error("poll failed", err);
+  }
+}
+
+async function loadProximity() {
+  try {
+    const res = await fetch("/api/proximity");
+    const data = await res.json();
+    edges = data.edges || [];
+  } catch (err) {
+    console.error("proximity load failed", err);
   }
 }
 
@@ -125,16 +337,18 @@ askForm.addEventListener("submit", async (e) => {
   }
 });
 
-// Renders a swarm of dots colored by the live ClickHouse mood distribution —
-// an aggregate summary, not per-NPC data, so this stays cheap at any scale.
+// Renders the scale-test swarm as breathing dots colored by the live
+// ClickHouse mood distribution -- an aggregate summary, not per-NPC data,
+// so this stays cheap at any scale.
 function renderScale(data) {
   const active = data.active_count || 0;
-  scene.hidden = active > 0;
-  scaleView.hidden = active === 0;
+  mode = active > 0 ? "scale" : "scene";
+  scaleLegend.hidden = active === 0;
 
   if (active === 0) {
     scaleStatus.textContent = "";
     scaleStats.innerHTML = "";
+    scaleNodes = [];
     return;
   }
 
@@ -142,25 +356,17 @@ function renderScale(data) {
     `${active} synthetic NPCs · ${data.total_rows ?? 0} ClickHouse rows written · ` +
     `aggregate query answered in ${data.query_ms ?? "—"}ms`;
 
-  const frag = document.createDocumentFragment();
+  const colors = [];
   const moodCounts = Object.entries(data.mood_counts || {}).sort((a, b) => b[1] - a[1]);
-  let placed = 0;
   for (const [mood, count] of moodCounts) {
-    for (let i = 0; i < count; i++) {
-      const dot = document.createElement("div");
-      dot.className = "pixel";
-      dot.style.background = MOOD_COLORS[mood] || "#7c8ba1";
-      dot.title = mood;
-      frag.appendChild(dot);
-      placed++;
-    }
+    for (let i = 0; i < count; i++) colors.push(MOOD_COLORS[mood] || "#7c8ba1");
   }
-  for (; placed < active; placed++) {
-    const dot = document.createElement("div");
-    dot.className = "pixel";
-    frag.appendChild(dot);
-  }
-  scaleSwarm.replaceChildren(frag);
+  while (colors.length < active) colors.push("#3a4150");
+
+  scaleNodes = colors.slice(0, active).map((color, i) => ({
+    color, x: 0, y: 0, r: 5, phase: pseudoRandom(i * 31.7) * Math.PI * 2,
+  }));
+  layoutScaleNodes();
 
   scaleStats.innerHTML =
     `<strong>Scale test</strong><br>` +
@@ -202,7 +408,7 @@ async function pollScale() {
 // Chain-reaction feed: a domino-effect log built entirely from ClickHouse
 // events that the simulation writes as a side effect of each NPC's own
 // Gemini decision -- nothing here decides what happened, only how to
-// describe it.
+// describe and animate it.
 const CHAIN_ICONS = {
   chain_reaction_source: "🔥",
   goal_change: "🎯",
@@ -210,18 +416,15 @@ const CHAIN_ICONS = {
 };
 const seenChainKeys = new Set();
 let chainLogLoaded = false;
-const rippleTimers = {};
 
 function npcName(npcId) {
   return (latestById[npcId] && latestById[npcId].name) || npcId;
 }
 
-function pulseNpc(npcId) {
-  const el = elements[npcId];
-  if (!el) return;
-  el.classList.add("rippling");
-  clearTimeout(rippleTimers[npcId]);
-  rippleTimers[npcId] = setTimeout(() => el.classList.remove("rippling"), 2500);
+function parseNoticedBy(payload) {
+  const match = payload.match(/^(.*) \(noticed by: (.*)\)$/);
+  if (!match) return null;
+  return { action: match[1], ids: match[2].split(",").map((s) => s.trim()) };
 }
 
 function renderChainEntry(row) {
@@ -230,10 +433,10 @@ function renderChainEntry(row) {
   let detail;
 
   if (row.event_type === "chain_reaction_source") {
-    const match = row.payload.match(/^(.*) \(noticed by: (.*)\)$/);
-    if (match) {
-      const noticedNames = match[2].split(", ").map(npcName).join(", ");
-      detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(match[1])} — noticed by ${escapeHtml(noticedNames)}`;
+    const parsed = parseNoticedBy(row.payload);
+    if (parsed) {
+      const noticedNames = parsed.ids.map(npcName).join(", ");
+      detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(parsed.action)} — noticed by ${escapeHtml(noticedNames)}`;
     } else {
       detail = `<strong>${escapeHtml(name)}</strong> ${escapeHtml(row.payload)}`;
     }
@@ -246,14 +449,33 @@ function renderChainEntry(row) {
   return `<div class="chain-entry">${icon} ${detail}</div>`;
 }
 
-function pulseFromEntry(row) {
-  pulseNpc(row.npc_id);
-  if (row.event_type === "chain_reaction_source") {
-    const match = row.payload.match(/\(noticed by: (.*)\)$/);
-    if (match) {
-      for (const id of match[1].split(", ")) pulseNpc(id.trim());
-    }
+// Ignites the real canvas nodes for a chain-log row: the source flares
+// immediately, then a traveling pulse carries the same flare to each
+// neighbor along its real proximity edge, arriving (and igniting that node)
+// only once it visibly reaches it.
+function triggerCascade(row) {
+  const now = performance.now();
+  if (row.event_type === "scripted_event") {
+    ignite(row.npc_id, now, SCRIPT_COLOR);
+    return;
   }
+  if (row.event_type === "goal_change") {
+    const n = sceneNodes.get(row.npc_id);
+    if (n) n.goalPingStart = now;
+    return;
+  }
+  if (row.event_type !== "chain_reaction_source") return;
+
+  ignite(row.npc_id, now, FLARE_COLOR);
+  const parsed = parseNoticedBy(row.payload);
+  if (!parsed) return;
+  parsed.ids.forEach((targetId, i) => {
+    const na = sceneNodes.get(row.npc_id), nb = sceneNodes.get(targetId);
+    if (!na || !nb) return;
+    const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
+    const duration = Math.min(900, Math.max(300, dist / 0.6));
+    pulses.push({ a: row.npc_id, b: targetId, start: now + i * 110, duration, color: FLARE_COLOR, arrived: false });
+  });
 }
 
 async function pollChainLog() {
@@ -265,13 +487,13 @@ async function pollChainLog() {
       return;
     }
     chainLog.innerHTML = rows.map(renderChainEntry).join("");
-    // Only pulse NPCs for events that appeared since the last poll -- on
-    // first load this would otherwise flash the whole history at once.
+    // Only animate events that appeared since the last poll -- on first
+    // load this would otherwise flash the whole history at once.
     for (const row of rows) {
       const key = `${row.ts}|${row.npc_id}|${row.event_type}`;
       if (seenChainKeys.has(key)) continue;
       seenChainKeys.add(key);
-      if (chainLogLoaded) pulseFromEntry(row);
+      if (chainLogLoaded) triggerCascade(row);
     }
     chainLogLoaded = true;
   } catch (err) {
@@ -282,6 +504,9 @@ async function pollChainLog() {
 scaleSelect.addEventListener("change", () => setScale(scaleSelect.value));
 setInterval(pollScale, 3000);
 
+resizeCanvas();
+requestAnimationFrame(draw);
+loadProximity();
 poll();
 setInterval(poll, 3000);
 pollChainLog();
